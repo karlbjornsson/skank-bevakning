@@ -1,0 +1,45 @@
+name: Skänkbevakning
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"  # Blocket var 15:e minut
+    - cron: "5 * * * *"     # Alla källor en gång i timmen
+  workflow_dispatch:         # Starta manuellt från fliken Actions
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bevakning
+  cancel-in-progress: false
+
+jobs:
+  bevaka:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sök efter nya skänkar
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          if [ "${{ github.event.schedule }}" = "*/15 * * * *" ]; then
+            python bevaka.py --kallor blocket
+          else
+            python bevaka.py
+          fi
+
+      - name: Spara sedda annonser
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add sedda.json
+          git diff --cached --quiet || (git commit -m "Uppdatera sedda annonser" && git push)
