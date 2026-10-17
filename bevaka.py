@@ -2,7 +2,7 @@
 
 Kör:  python bevaka.py                   -> visar nya annonser sedan förra körningen + skriver rapport.html
       python bevaka.py --alla            -> visar alla träffar, inte bara nya
-      python bevaka.py --kallor blocket  -> kollar bara Blocket (kommaseparerat: auctionet,blocket,tradera,bevpris)
+      python bevaka.py --kallor blocket  -> kollar bara Blocket (kommaseparerat: auctionet,blocket,tradera,bevpris,spegel)
       python bevaka.py --oppna           -> öppnar rapporten i webbläsaren om något nytt finns
 
 Mejl skickas om miljövariablerna GMAIL_USER, GMAIL_APP_PASSWORD och MAIL_TO är satta.
@@ -42,6 +42,11 @@ TITELFILTER = re.compile(r"\b(skänk(?!es\b)|sideboard)", re.I)  # "skänkes" = 
 MAX_PRIS = 3000
 # Auctionet i hela Sverige: meddela när bevakningspriset är uppnått och budet är högst detta
 BEVPRIS_MAX = 1000
+# Blocket, Stockholms innerstad: speglar för max 50 kr (titeln måste innehålla "spegel")
+BLOCKET_STOCKHOLMS_KOMMUN = "1.300001.310180"
+SPEGEL_SOKORD = ["spegel", "spegelglas", "bortskänkes"]
+SPEGEL_TITEL = re.compile(r"spegel", re.I)
+SPEGEL_MAX_PRIS = 50
 
 
 def intressant(a):
@@ -98,7 +103,7 @@ def auctionet():
         for i in auctionet_sok(company_id=cid):
             if i["company_id"] == cid:
                 ut.append(auctionet_post(i, "auctionet", f"Auctionet – {hus}"))
-    return ut
+    return [a for a in ut if intressant(a)]
 
 
 def bevakningspris():
@@ -109,21 +114,21 @@ def bevakningspris():
         if (i["currency"] == "SEK" and i.get("reserve_met")
                 and a["belopp"] is not None and a["belopp"] <= BEVPRIS_MAX):
             ut.append(a)
-    return ut
+    return [a for a in ut if TITELFILTER.search(a["titel"])]
 
 
-def blocket():
+def blocket_sok(sokord, location, prefix, kalla):
     ut = []
     for sida in range(1, BLOCKET_SIDOR + 1):
-        q = urllib.parse.urlencode({"q": SOKORD, "location": BLOCKET_STOCKHOLM,
+        q = urllib.parse.urlencode({"q": sokord, "location": location,
                                     "sort": "PUBLISHED_DESC", "page": sida})
         data = json.loads(hamta(
             f"https://www.blocket.se/recommerce/forsale/search/api/search/SEARCH_ID_BAP_COMMON?{q}"))
         for d in data.get("docs", []):
             pris = (d.get("price") or {}).get("amount")
             ut.append({
-                "id": f"blocket:{d['id']}",
-                "kalla": "Blocket",
+                "id": f"{prefix}:{d['id']}",
+                "kalla": kalla,
                 "titel": d.get("heading", ""),
                 "pris": f"{pris} kr" if pris is not None else "",
                 "belopp": pris,
@@ -131,9 +136,38 @@ def blocket():
                         + tid(d.get("timestamp", 0) / 1000).strftime("%Y-%m-%d %H:%M"),
                 "url": d.get("canonical_url", ""),
                 "bild": (d.get("image") or {}).get("url", ""),
+                "ort": d.get("location", ""),
+                "koord": d.get("coordinates") or {},
             })
         if not data.get("docs"):
             break
+    return ut
+
+
+def blocket():
+    return [a for a in blocket_sok(SOKORD, BLOCKET_STOCKHOLM, "blocket", "Blocket") if intressant(a)]
+
+
+def i_innerstan(a):
+    # Postorten "Stockholm" + en ruta runt Kungsholmen–Östermalm/Gärdet och Vasastan–Södermalm
+    lat, lon = a["koord"].get("lat"), a["koord"].get("lon")
+    if a["ort"] != "Stockholm":
+        return False
+    if lat is None:
+        return True
+    if lat < 59.322 and lon < 18.02:  # Gröndal/Liljeholmen – väster om Hornstull
+        return False
+    return 59.306 <= lat <= 59.365 and 17.99 <= lon <= 18.13
+
+
+def spegel():
+    ut, sett = [], set()
+    for sokord in SPEGEL_SOKORD:
+        for a in blocket_sok(sokord, BLOCKET_STOCKHOLMS_KOMMUN, "spegel", "Blocket – spegel (innerstan)"):
+            if (a["id"] not in sett and SPEGEL_TITEL.search(a["titel"]) and i_innerstan(a)
+                    and (a["belopp"] is None or a["belopp"] <= SPEGEL_MAX_PRIS)):
+                sett.add(a["id"])
+                ut.append(a)
     return ut
 
 
@@ -163,7 +197,7 @@ def tradera():
             "url": i.get("itemUrl", ""),
             "bild": bild,
         })
-    return ut
+    return [a for a in ut if intressant(a)]
 
 
 def skriv_rapport(alla, nya_id):
@@ -211,7 +245,7 @@ def skicka_mejl(nya):
 def testmejl():
     if not (os.environ.get("GMAIL_USER") and os.environ.get("GMAIL_APP_PASSWORD")):
         sys.exit("FEL: GMAIL_USER och/eller GMAIL_APP_PASSWORD saknas – lägg in dem som secrets")
-    exempel = [a for a in blocket() if intressant(a)][:3]
+    exempel = blocket()[:3]
     for a in exempel:
         a["titel"] = "TEST – " + a["titel"]
     skicka_mejl(exempel)
@@ -221,17 +255,17 @@ def main():
     if "--testmejl" in sys.argv:
         return testmejl()
     visa_alla = "--alla" in sys.argv
-    valda = {"auctionet", "blocket", "tradera", "bevpris"}
+    valda = {"auctionet", "blocket", "tradera", "bevpris", "spegel"}
     if "--kallor" in sys.argv:
         valda = set(sys.argv[sys.argv.index("--kallor") + 1].lower().split(","))
     sedda = set(json.loads(STATE.read_text(encoding="utf-8"))) if STATE.exists() else set()
     alla, nya = [], []
     for namn, f in [("auctionet", auctionet), ("blocket", blocket), ("tradera", tradera),
-                    ("bevpris", bevakningspris)]:
+                    ("bevpris", bevakningspris), ("spegel", spegel)]:
         if namn not in valda:
             continue
         try:
-            r = [a for a in f() if intressant(a)]
+            r = f()
         except Exception as e:
             print(f"{namn}: FEL – {e}")
             continue
