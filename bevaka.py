@@ -170,7 +170,18 @@ def skicka_mejl(nya):
     print(f"Mejl skickat till {till}")
 
 
+def testmejl():
+    if not (os.environ.get("GMAIL_USER") and os.environ.get("GMAIL_APP_PASSWORD")):
+        sys.exit("FEL: GMAIL_USER och/eller GMAIL_APP_PASSWORD saknas – lägg in dem som secrets")
+    exempel = [a for a in blocket() if TITELFILTER.search(a["titel"])][:3]
+    for a in exempel:
+        a["titel"] = "TEST – " + a["titel"]
+    skicka_mejl(exempel)
+
+
 def main():
+    if "--testmejl" in sys.argv:
+        return testmejl()
     visa_alla = "--alla" in sys.argv
     valda = {"auctionet", "blocket", "tradera"}
     if "--kallor" in sys.argv:

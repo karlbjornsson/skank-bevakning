@@ -5,6 +5,11 @@ on:
     - cron: "*/15 * * * *"  # Blocket var 15:e minut
     - cron: "5 * * * *"     # Alla källor en gång i timmen
   workflow_dispatch:         # Starta manuellt från fliken Actions
+    inputs:
+      testmejl:
+        description: "Skicka ett testmejl (ändrar inget i bevakningen)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -31,7 +36,9 @@ jobs:
           MAIL_TO: ${{ secrets.MAIL_TO }}
           PYTHONIOENCODING: utf-8
         run: |
-          if [ "${{ github.event.schedule }}" = "*/15 * * * *" ]; then
+          if [ "${{ inputs.testmejl }}" = "true" ]; then
+            python bevaka.py --testmejl
+          elif [ "${{ github.event.schedule }}" = "*/15 * * * *" ]; then
             python bevaka.py --kallor blocket
           else
             python bevaka.py
