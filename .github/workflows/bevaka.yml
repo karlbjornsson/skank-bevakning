@@ -10,6 +10,10 @@ on:
         description: "Skicka ett testmejl (ändrar inget i bevakningen)"
         type: boolean
         default: false
+      kallor:
+        description: "Vilka källor (tomt = alla), t.ex. blocket,bevpris,spegel"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -38,6 +42,8 @@ jobs:
         run: |
           if [ "${{ inputs.testmejl }}" = "true" ]; then
             python bevaka.py --testmejl
+          elif [ -n "${{ inputs.kallor }}" ]; then
+            python bevaka.py --kallor "${{ inputs.kallor }}"
           elif [ "${{ github.event.schedule }}" = "7,22,37,52 * * * *" ]; then
             python bevaka.py --kallor blocket,bevpris,spegel
           else

@@ -39,7 +39,7 @@ TRADERA_LAN = "Stockholm"
 # Titeln måste innehålla ordet (sökmotorerna matchar annars t.ex. "bortskänkes" och beskrivningstext)
 TITELFILTER = re.compile(r"\b(skänk(?!es\b)|sideboard)", re.I)  # "skänkes" = ges bort
 # Skänkar med något av dessa ord i titeln hoppas över (gäller inte spegelbevakningen)
-UTESLUT = re.compile(r"ikea", re.I)
+UTESLUT = re.compile(r"ikea|jysk|\bmio\b", re.I)
 # Högsta pris i kr (aktuellt bud på auktioner). Annonser utan pris släpps igenom.
 MAX_PRIS = 3000
 # Auctionet i hela Sverige: meddela när bevakningspriset är uppnått och budet är högst detta
