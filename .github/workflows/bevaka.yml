@@ -2,7 +2,7 @@ name: Skänkbevakning
 
 on:
   schedule:
-    - cron: "*/15 * * * *"  # Blocket + bevakningspris på Auctionet var 15:e minut
+    - cron: "*/15 * * * *"  # Blocket var 15:e minut
     - cron: "5 * * * *"     # Alla källor en gång i timmen
   workflow_dispatch:         # Starta manuellt från fliken Actions
     inputs:
@@ -39,7 +39,7 @@ jobs:
           if [ "${{ inputs.testmejl }}" = "true" ]; then
             python bevaka.py --testmejl
           elif [ "${{ github.event.schedule }}" = "*/15 * * * *" ]; then
-            python bevaka.py --kallor blocket,bevpris
+            python bevaka.py --kallor blocket
           else
             python bevaka.py
           fi
