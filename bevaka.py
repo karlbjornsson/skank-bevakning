@@ -38,6 +38,8 @@ BLOCKET_SIDOR = 3
 TRADERA_LAN = "Stockholm"
 # Titeln måste innehålla ordet (sökmotorerna matchar annars t.ex. "bortskänkes" och beskrivningstext)
 TITELFILTER = re.compile(r"\b(skänk(?!es\b)|sideboard)", re.I)  # "skänkes" = ges bort
+# Skänkar med något av dessa ord i titeln hoppas över (gäller inte spegelbevakningen)
+UTESLUT = re.compile(r"ikea", re.I)
 # Högsta pris i kr (aktuellt bud på auktioner). Annonser utan pris släpps igenom.
 MAX_PRIS = 3000
 # Auctionet i hela Sverige: meddela när bevakningspriset är uppnått och budet är högst detta
@@ -49,8 +51,12 @@ SPEGEL_TITEL = re.compile(r"spegel", re.I)
 SPEGEL_MAX_PRIS = 50
 
 
+def skank_titel(titel):
+    return bool(TITELFILTER.search(titel)) and not UTESLUT.search(titel)
+
+
 def intressant(a):
-    return bool(TITELFILTER.search(a["titel"])) and (a["belopp"] is None or a["belopp"] <= MAX_PRIS)
+    return skank_titel(a["titel"]) and (a["belopp"] is None or a["belopp"] <= MAX_PRIS)
 
 MAPP = Path(__file__).resolve().parent
 STATE = MAPP / "sedda.json"
@@ -114,7 +120,7 @@ def bevakningspris():
         if (i["currency"] == "SEK" and i.get("reserve_met")
                 and a["belopp"] is not None and a["belopp"] <= BEVPRIS_MAX):
             ut.append(a)
-    return [a for a in ut if TITELFILTER.search(a["titel"])]
+    return [a for a in ut if skank_titel(a["titel"])]
 
 
 def blocket_sok(sokord, location, prefix, kalla):
