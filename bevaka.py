@@ -2,7 +2,7 @@
 
 Kör:  python bevaka.py                   -> visar nya annonser sedan förra körningen + skriver rapport.html
       python bevaka.py --alla            -> visar alla träffar, inte bara nya
-      python bevaka.py --kallor blocket  -> kollar bara Blocket (kommaseparerat: auctionet,blocket,tradera)
+      python bevaka.py --kallor blocket  -> kollar bara Blocket (kommaseparerat: auctionet,blocket,tradera,bevpris)
       python bevaka.py --oppna           -> öppnar rapporten i webbläsaren om något nytt finns
 
 Mejl skickas om miljövariablerna GMAIL_USER, GMAIL_APP_PASSWORD och MAIL_TO är satta.
@@ -40,6 +40,8 @@ TRADERA_LAN = "Stockholm"
 TITELFILTER = re.compile(r"\b(skänk(?!es\b)|sideboard)", re.I)  # "skänkes" = ges bort
 # Högsta pris i kr (aktuellt bud på auktioner). Annonser utan pris släpps igenom.
 MAX_PRIS = 3000
+# Auctionet i hela Sverige: meddela när bevakningspriset är uppnått och budet är högst detta
+BEVPRIS_MAX = 1000
 
 
 def intressant(a):
@@ -61,25 +63,52 @@ def hamta(url):
         return r.read().decode("utf-8")
 
 
+def auctionet_post(i, prefix, kalla):
+    bud = i["bids"][0]["amount"] if i.get("bids") else None  # högsta budet ligger först
+    pris = f"Utrop {i.get('estimate') or '?'} kr, " + (f"bud {bud} kr" if bud else
+                                                        f"inga bud (start {i['starting_bid_amount']} kr)")
+    if i.get("reserve_met"):
+        pris += ", bevakningspris uppnått"
+    return {
+        "id": f"{prefix}:{i['id']}",
+        "kalla": kalla,
+        "titel": i["title"],
+        "pris": pris,
+        "belopp": bud if bud is not None else i.get("starting_bid_amount"),
+        "info": f"{i.get('location', '')}, slutar " + tid(i["ends_at"]).strftime("%Y-%m-%d %H:%M"),
+        "url": i["url"].replace("/en/", "/sv/"),
+        "bild": (i.get("images") or [{}])[0].get("thumb", ""),
+    }
+
+
+def auctionet_sok(**filter):
+    items, sida = [], 1
+    while True:
+        q = urllib.parse.urlencode({"q": SOKORD, "per_page": 100, "page": sida, **filter})
+        data = json.loads(hamta(f"https://auctionet.com/api/v2/items.json?{q}"))
+        items += data["items"]
+        if not data["items"] or sida >= data["pagination"]["total_pages"]:
+            return items
+        sida += 1
+
+
 def auctionet():
     ut = []
     for cid, hus in AUCTIONET_HUS.items():
-        q = urllib.parse.urlencode({"q": SOKORD, "company_id": cid, "per_page": 100})
-        data = json.loads(hamta(f"https://auctionet.com/api/v2/items.json?{q}"))
-        for i in data["items"]:
-            if i["company_id"] != cid:
-                continue
-            bud = i.get("highest_bid_amount") or i.get("next_bid_amount")
-            ut.append({
-                "id": f"auctionet:{i['id']}",
-                "kalla": f"Auctionet – {hus}",
-                "titel": i["title"],
-                "pris": f"Utrop {i.get('estimate') or '?'} kr, bud {bud} kr",
-                "belopp": bud,
-                "info": "Slutar " + tid(i["ends_at"]).strftime("%Y-%m-%d %H:%M"),
-                "url": i["url"].replace("/en/", "/sv/"),
-                "bild": (i.get("images") or [{}])[0].get("thumb", ""),
-            })
+        for i in auctionet_sok(company_id=cid):
+            if i["company_id"] == cid:
+                ut.append(auctionet_post(i, "auctionet", f"Auctionet – {hus}"))
+    return ut
+
+
+def bevakningspris():
+    """Alla svenska hus: skänkar där bevakningspriset är uppnått och budet är högst BEVPRIS_MAX."""
+    ut = []
+    for i in auctionet_sok():
+        a = auctionet_post(i, "bevpris", f"Auctionet – {i['house']}")
+        if (i["currency"] == "SEK" and i.get("reserve_met")
+                and a["belopp"] is not None and a["belopp"] <= BEVPRIS_MAX):
+            ut.append(a)
     return ut
 
 
@@ -192,12 +221,13 @@ def main():
     if "--testmejl" in sys.argv:
         return testmejl()
     visa_alla = "--alla" in sys.argv
-    valda = {"auctionet", "blocket", "tradera"}
+    valda = {"auctionet", "blocket", "tradera", "bevpris"}
     if "--kallor" in sys.argv:
         valda = set(sys.argv[sys.argv.index("--kallor") + 1].lower().split(","))
     sedda = set(json.loads(STATE.read_text(encoding="utf-8"))) if STATE.exists() else set()
     alla, nya = [], []
-    for namn, f in [("auctionet", auctionet), ("blocket", blocket), ("tradera", tradera)]:
+    for namn, f in [("auctionet", auctionet), ("blocket", blocket), ("tradera", tradera),
+                    ("bevpris", bevakningspris)]:
         if namn not in valda:
             continue
         try:
