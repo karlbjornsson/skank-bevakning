@@ -38,6 +38,12 @@ BLOCKET_SIDOR = 3
 TRADERA_LAN = "Stockholm"
 # Titeln måste innehålla ordet (sökmotorerna matchar annars t.ex. "bortskänkes" och beskrivningstext)
 TITELFILTER = re.compile(r"\b(skänk(?!es\b)|sideboard)", re.I)  # "skänkes" = ges bort
+# Högsta pris i kr (aktuellt bud på auktioner). Annonser utan pris släpps igenom.
+MAX_PRIS = 3000
+
+
+def intressant(a):
+    return bool(TITELFILTER.search(a["titel"])) and (a["belopp"] is None or a["belopp"] <= MAX_PRIS)
 
 MAPP = Path(__file__).resolve().parent
 STATE = MAPP / "sedda.json"
@@ -69,6 +75,7 @@ def auctionet():
                 "kalla": f"Auctionet – {hus}",
                 "titel": i["title"],
                 "pris": f"Utrop {i.get('estimate') or '?'} kr, bud {bud} kr",
+                "belopp": bud,
                 "info": "Slutar " + tid(i["ends_at"]).strftime("%Y-%m-%d %H:%M"),
                 "url": i["url"].replace("/en/", "/sv/"),
                 "bild": (i.get("images") or [{}])[0].get("thumb", ""),
@@ -90,6 +97,7 @@ def blocket():
                 "kalla": "Blocket",
                 "titel": d.get("heading", ""),
                 "pris": f"{pris} kr" if pris is not None else "",
+                "belopp": pris,
                 "info": f"{d.get('location', '')}, "
                         + tid(d.get("timestamp", 0) / 1000).strftime("%Y-%m-%d %H:%M"),
                 "url": d.get("canonical_url", ""),
@@ -121,6 +129,7 @@ def tradera():
             "kalla": "Tradera",
             "titel": i.get("shortDescription", ""),
             "pris": f"{i.get('price')} kr",
+            "belopp": i.get("price"),
             "info": i.get("endDate", "") and "Slutar " + str(i.get("endDate"))[:16].replace("T", " "),
             "url": i.get("itemUrl", ""),
             "bild": bild,
@@ -173,7 +182,7 @@ def skicka_mejl(nya):
 def testmejl():
     if not (os.environ.get("GMAIL_USER") and os.environ.get("GMAIL_APP_PASSWORD")):
         sys.exit("FEL: GMAIL_USER och/eller GMAIL_APP_PASSWORD saknas – lägg in dem som secrets")
-    exempel = [a for a in blocket() if TITELFILTER.search(a["titel"])][:3]
+    exempel = [a for a in blocket() if intressant(a)][:3]
     for a in exempel:
         a["titel"] = "TEST – " + a["titel"]
     skicka_mejl(exempel)
@@ -192,7 +201,7 @@ def main():
         if namn not in valda:
             continue
         try:
-            r = [a for a in f() if TITELFILTER.search(a["titel"])]
+            r = [a for a in f() if intressant(a)]
         except Exception as e:
             print(f"{namn}: FEL – {e}")
             continue
