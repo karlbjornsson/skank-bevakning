@@ -56,7 +56,8 @@ def skank_titel(titel):
 
 
 def intressant(a):
-    return skank_titel(a["titel"]) and (a["belopp"] is None or a["belopp"] <= MAX_PRIS)
+    return (skank_titel(a["titel"]) and not UTESLUT.search(a.get("marke", ""))
+            and (a["belopp"] is None or a["belopp"] <= MAX_PRIS))
 
 MAPP = Path(__file__).resolve().parent
 STATE = MAPP / "sedda.json"
@@ -144,6 +145,7 @@ def blocket_sok(sokord, location, prefix, kalla):
                 "bild": (d.get("image") or {}).get("url", ""),
                 "ort": d.get("location", ""),
                 "koord": d.get("coordinates") or {},
+                "marke": d.get("brand", ""),  # säljarens val under "Märke"
             })
         if not data.get("docs"):
             break
