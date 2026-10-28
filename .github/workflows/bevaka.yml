@@ -1,8 +1,8 @@
-name: Skänkbevakning
+name: Matbordsbevakning
 
 on:
   schedule:
-    - cron: "7,22,37,52 * * * *"  # Blocket (skänk + spegel) + bevakningspris på Auctionet var 15:e minut
+    - cron: "7,22,37,52 * * * *"  # Blocket (matbord + spegel) + bevakningspris på Auctionet var 15:e minut
     - cron: "12 */4 * * *"  # Alla källor (även Tradera + Auctionet Stockholm) var 4:e timme
   workflow_dispatch:         # Starta manuellt från fliken Actions
     inputs:
@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Sök efter nya skänkar
+      - name: Sök efter nya matbord
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

@@ -1,4 +1,4 @@
-"""Bevakar SKÄNK på Auctionet (utvalda hus), Blocket (Stockholm) och Tradera (Stockholm).
+"""Bevakar MATBORD I EK på Auctionet (utvalda hus), Blocket (Stockholm) och Tradera (Stockholm).
 
 Kör:  python bevaka.py                   -> visar nya annonser sedan förra körningen + skriver rapport.html
       python bevaka.py --alla            -> visar alla träffar, inte bara nya
@@ -27,7 +27,7 @@ try:
 except Exception:  # t.ex. Windows utan tzdata – använd datorns lokala tid
     SVERIGE = None
 
-SOKORD = "skänk"
+SOKORD = "matbord ek"
 AUCTIONET_HUS = {
     239: "Stockholms Auktionsverk Magasin 5",
     232: "Crafoord Auktioner Stockholm",
@@ -36,10 +36,11 @@ AUCTIONET_HUS = {
 BLOCKET_STOCKHOLM = "0.300001"  # Stockholms län
 BLOCKET_SIDOR = 3
 TRADERA_LAN = "Stockholm"
-# Titeln måste innehålla ordet (sökmotorerna matchar annars t.ex. "bortskänkes" och beskrivningstext)
-TITELFILTER = re.compile(r"\b(skänk(?!es\b)|sideboard)", re.I)  # "skänkes" = ges bort
-# Skänkar med något av dessa ord i titeln hoppas över (gäller inte spegelbevakningen)
-UTESLUT = re.compile(r"ikea|jysk|\bmio\b", re.I)
+# Titeln måste innehålla både "matbord" och "ek" (sökmotorerna matchar annars även beskrivningstext)
+TITELFILTER = re.compile(r"matbord", re.I)
+EKFILTER = re.compile(r"\bek|massivek|\boak\b", re.I)  # "ek", "ekbord", "ekmatbord", "massivek"
+# Bord med något av dessa ord i titeln hoppas över (gäller inte spegelbevakningen)
+UTESLUT = re.compile(r"ikea|jysk|\bmio\b|fan[eé]r|imitation|folie|ekmönst|ekeffekt", re.I)
 # Högsta pris i kr (aktuellt bud på auktioner). Annonser utan pris släpps igenom.
 MAX_PRIS = 3000
 # Auctionet i hela Sverige: meddela när bevakningspriset är uppnått och budet är högst detta
@@ -51,12 +52,12 @@ SPEGEL_TITEL = re.compile(r"spegel", re.I)
 SPEGEL_MAX_PRIS = 50
 
 
-def skank_titel(titel):
-    return bool(TITELFILTER.search(titel)) and not UTESLUT.search(titel)
+def bord_titel(titel):
+    return bool(TITELFILTER.search(titel) and EKFILTER.search(titel)) and not UTESLUT.search(titel)
 
 
 def intressant(a):
-    return (skank_titel(a["titel"]) and not UTESLUT.search(a.get("marke", ""))
+    return (bord_titel(a["titel"]) and not UTESLUT.search(a.get("marke", ""))
             and (a["belopp"] is None or a["belopp"] <= MAX_PRIS))
 
 MAPP = Path(__file__).resolve().parent
@@ -114,14 +115,14 @@ def auctionet():
 
 
 def bevakningspris():
-    """Alla svenska hus: skänkar där bevakningspriset är uppnått och budet är högst BEVPRIS_MAX."""
+    """Alla svenska hus: matbord i ek där bevakningspriset är uppnått och budet är högst BEVPRIS_MAX."""
     ut = []
     for i in auctionet_sok():
         a = auctionet_post(i, "bevpris", f"Auctionet – {i['house']}")
         if (i["currency"] == "SEK" and i.get("reserve_met")
                 and a["belopp"] is not None and a["belopp"] <= BEVPRIS_MAX):
             ut.append(a)
-    return [a for a in ut if skank_titel(a["titel"])]
+    return [a for a in ut if bord_titel(a["titel"])]
 
 
 def blocket_sok(sokord, location, prefix, kalla):
@@ -218,11 +219,11 @@ def skriv_rapport(alla, nya_id):
             f'<td><a href="{html.escape(a["url"])}" target="_blank">{html.escape(a["titel"])}</a></td>'
             f'<td>{html.escape(a["kalla"])}</td><td>{html.escape(a["pris"])}</td>'
             f'<td>{html.escape(a["info"] or "")}</td></tr>')
-    RAPPORT.write_text(f"""<!doctype html><meta charset="utf-8"><title>Skänkbevakning</title>
+    RAPPORT.write_text(f"""<!doctype html><meta charset="utf-8"><title>Matbordsbevakning</title>
 <style>body{{font-family:system-ui;margin:20px}}table{{border-collapse:collapse;width:100%}}
 td{{padding:6px;border-bottom:1px solid #ddd;vertical-align:middle}}img{{width:80px;height:80px;object-fit:cover}}
 tr.ny{{background:#fff6d6}}td:first-child{{font-weight:bold;color:#c00}}</style>
-<h1>Skänkbevakning</h1><p>Uppdaterad {datetime.now():%Y-%m-%d %H:%M} – {len(nya_id)} nya, {len(alla)} totalt.</p>
+<h1>Matbordsbevakning</h1><p>Uppdaterad {datetime.now():%Y-%m-%d %H:%M} – {len(nya_id)} nya, {len(alla)} totalt.</p>
 <table>{''.join(rader)}</table>""", encoding="utf-8")
 
 
@@ -240,8 +241,8 @@ def skicka_mejl(nya):
         f'<div style="clear:both"></div></div>' for a in nya)
     msg = MIMEText(f'<div style="font-family:sans-serif">{kort}</div>', "html", "utf-8")
     forsta = nya[0]["titel"][:60]
-    msg["Subject"] = (f"Ny skänk: {forsta}" if len(nya) == 1
-                      else f"{len(nya)} nya skänkar – {forsta} m.fl.")
+    msg["Subject"] = (f"Nytt matbord: {forsta}" if len(nya) == 1
+                      else f"{len(nya)} nya matbord – {forsta} m.fl.")
     msg["From"] = anvandare
     msg["To"] = till
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as s:
